@@ -1,0 +1,64 @@
+name: CI/CD - Build, Test & Deploy to SFTP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run test
+      - run: npm run build
+        env:
+          NODE_ENV: production
+          # Set these as repository variables for your tool:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_APP_ID: ${{ vars.VITE_APP_ID }}
+          VITE_BASEPATH: ${{ vars.VITE_BASEPATH }}
+      - name: Integrity check
+        run: |
+          set -e
+          [ -f dist/client/index.html ] || { echo "index.html missing"; exit 1; }
+          grep -q "assets/" dist/client/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-dist
+          path: dist/client
+          retention-days: 3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: client-dist
+          path: dist/client
+      - run: sudo apt-get update -y && sudo apt-get install -y lftp
+      - name: Synchronize to SFTP Server
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          SFTP_REMOTE_DIR: ${{ secrets.SFTP_REMOTE_DIR }}
+        run: |
+          set -e
+          REMOTE_DIR="${SFTP_REMOTE_DIR:-/public_html/app}"
+          PORT="${SFTP_PORT:-2222}"
+          lftp -p "$PORT" -u "$SFTP_USER","$SFTP_PASSWORD" sftp://"$SFTP_HOST" <<EOT
+          set sftp:auto-confirm yes
+          mirror --reverse --delete --verbose ./dist/client $REMOTE_DIR
+          bye
+          EOT
