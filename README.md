@@ -71,8 +71,7 @@ npm run dev
 3. **Isolamento de Sessão**: Cria uma chave exclusiva de localStorage para evitar que fazer logout em uma aplicação deslogue as outras.
 4. **Configuração de Ambiente**: Cria `.env` e `.env.example` já preenchidos com o `VITE_APP_ID` e `VITE_BASEPATH` corretos.
 5. **Configuração de Rotas e Vite**: Ajusta o `vite.config.ts` e o roteador para lidar de forma nativa com o `basepath` definido.
-6. **Deploy SFTP Pré-configurado**: Ajusta a pasta remota no arquivo de workflow `.github/workflows/deploy.yml` (`/public_html/<basepath>`).
-7. **Repositório Git**: Inicializa automaticamente um novo repositório git (`git init`) pronto para o primeiro commit.
+6. **Repositório Git**: Inicializa automaticamente um novo repositório git (`git init`) pronto para o primeiro commit.
 
 ---
 

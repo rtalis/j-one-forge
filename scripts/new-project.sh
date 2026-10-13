@@ -27,7 +27,6 @@ sed -i "s|name: \"Ruah Base\"|name: \"$NAME\"|; s|storageKey: \"ruah_base_token\
 sed -i "s|loginTagline: \"Nova Ferramenta\"|loginTagline: \"$NAME\"|" src/app.config.ts
 sed -i "s|^VITE_APP_ID=.*|VITE_APP_ID=$APPID|; s|^VITE_BASEPATH=.*|VITE_BASEPATH=$BASEPATH|" .env.example
 cp .env.example .env
-[ -n "$BASEPATH" ] && sed -i "s|/public_html/app|/public_html${BASEPATH}|" .github/workflows/deploy.yml || true
 git init -q 2>/dev/null || true
 
 echo "Done. Next:"
