@@ -1,5 +1,5 @@
 {
-  "name": "ruah-base",
+  "name": "j-one-forge",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsc --noEmit",
     "format": "prettier --write .",
-    "new-project": "bash scripts/new-project.sh"
+    "create": "node scripts/forge.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

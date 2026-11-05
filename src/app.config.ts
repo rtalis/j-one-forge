@@ -10,7 +10,7 @@
  */
 export const APP_CONFIG = {
   /** Shown in sidebar header, login and <title>. */
-  name: "Ruah Base",
+  name: "J-One Forge",
   /** Small line under the name in the sidebar. */
   subtitle: "Template de ferramentas",
   /** Login screen big title / tagline. */
@@ -19,7 +19,7 @@ export const APP_CONFIG = {
   loginDescription:
     "Plataforma moderna, integrada e confiável para o dia a dia da Ruah.",
   /** localStorage key for the session. Make it unique per tool. */
-  storageKey: "ruah_base_token",
+  storageKey: "ruah_j_one_forge_token",
   /** App id used by the portal J-One / API token exchange (fallback when VITE_APP_ID is unset). */
   defaultAppId: 1,
   /** API fallback when VITE_API_URL is unset. */
