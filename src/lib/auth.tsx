@@ -7,6 +7,24 @@ const STORAGE_KEY = APP_CONFIG.storageKey;
 const PORTAL_SESSION_KEY = `${APP_CONFIG.storageKey}_from_portal`;
 export const UNAUTHORIZED_EVENT = "ruah:unauthorized";
 
+// Captura o ticket SSO e o remove da URL já no carregamento do módulo, ANTES de o
+// TanStack Router ler a localização. Se a limpeza ficar para um useEffect, o router já
+// guardou `?sso=` no estado dele e o devolve à barra de endereço na próxima navegação.
+let pendingSsoTicket: string | null = null;
+if (typeof window !== "undefined") {
+  try {
+    const url = new URL(window.location.href);
+    pendingSsoTicket = url.searchParams.get("sso");
+    if (pendingSsoTicket) {
+      url.searchParams.delete("sso");
+      // Preserva o history.state para não quebrar o controle de histórico do router.
+      window.history.replaceState(window.history.state, "", url.toString());
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 // Buffer portal auth event if postMessage arrives before React mounts
 let bufferedPortalAuthEvent: { portalToken: string; userId: number; appId?: number } | null = null;
 if (typeof window !== "undefined") {
@@ -28,6 +46,7 @@ export function isPortalEnvironment(): boolean {
   if (typeof window === "undefined") return false;
   if (window.self !== window.top) return true;
   if (sessionStorage.getItem(PORTAL_SESSION_KEY) === "true") return true;
+  if (pendingSsoTicket) return true;
   const params = new URLSearchParams(window.location.search);
   return (
     params.has("fromPortal") ||
@@ -96,18 +115,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {}
     }
 
-    // 2. Extrai e autentica via ticket SSO se presente na URL
-    let ssoTicket: string | null = null;
-    if (typeof window !== "undefined") {
-      try {
-        const cleanUrl = new URL(window.location.href);
-        ssoTicket = cleanUrl.searchParams.get("sso");
-        if (ssoTicket) {
-          cleanUrl.searchParams.delete("sso");
-          window.history.replaceState({}, "", cleanUrl.toString());
-        }
-      } catch {}
-    }
+    // 2. Autentica via ticket SSO (já removido da URL no carregamento do módulo).
+    // O ticket é de uso único: consome e descarta.
+    const ssoTicket = pendingSsoTicket;
+    pendingSsoTicket = null;
 
     if (ssoTicket) {
       setIsFromPortal(true);
