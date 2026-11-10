@@ -29,7 +29,12 @@ async function fetchItens(): Promise<Item[]> {
 
 function ExemploTabelaPage() {
   const [q, setQ] = useState("");
-  const query = useQuery({ queryKey: ["exemplo-itens"], queryFn: fetchItens });
+  // Se falhar, o toast de erro (com "Copiar") aparece sozinho com esta mensagem.
+  const query = useQuery({
+    queryKey: ["exemplo-itens"],
+    queryFn: fetchItens,
+    meta: { erro: "Falha ao carregar os itens." },
+  });
   const rows = useMemo(
     () =>
       (query.data ?? []).filter((r) => r.descricao.toLowerCase().includes(q.trim().toLowerCase())),

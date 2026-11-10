@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import { toastErro } from "./erro-toast";
 import { exchangePortalToken, authenticateSsoTicket, APP_ID } from "./auth-api";
 import { APP_CONFIG } from "@/app.config";
 
@@ -130,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           toast.success(`Acesso autorizado! Bem-vindo(a), ${sessionData.user?.name || "Usuário"}`);
         })
         .catch((err) => {
-          console.error("Falha ao autenticar via ticket SSO:", err);
+          toastErro("Não foi possível entrar pelo Portal J-One. Faça login.", err);
           setIsAuthenticatingPortal(false);
         });
     }
@@ -199,7 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error: unknown) {
         console.error("Falha na integração com o Portal:", error);
         const message = error instanceof Error ? error.message : "Acesso negado pela central.";
-        toast.error(message);
+        toastErro(message, error);
         signOut();
       } finally {
         setIsAuthenticatingPortal(false);
@@ -255,7 +256,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         !message.includes("Unauthorized") &&
         !message.includes("$TSR/Error")
       ) {
-        toast.error(message || "Erro de comunicação com o servidor.");
+        toastErro(message || "Erro de comunicação com o servidor.", error);
       }
     };
 

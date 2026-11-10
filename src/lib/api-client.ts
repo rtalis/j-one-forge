@@ -117,10 +117,13 @@ async function fetchComFallback(caminho: string, init: RequestInit): Promise<Res
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Endereço chamado (vai no "Copiar" do toast de erro, para o suporte). */
+  url: string | null;
+  constructor(message: string, status: number, url: string | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.url = url;
   }
 }
 
@@ -143,6 +146,12 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
 }
 
 async function parseApiError(response: Response): Promise<ApiError> {
+  const erro = await erroDaResposta(response);
+  erro.url = response.url || null;
+  return erro;
+}
+
+async function erroDaResposta(response: Response): Promise<ApiError> {
   let text = "";
   try {
     text = await response.text();

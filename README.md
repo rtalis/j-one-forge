@@ -65,6 +65,7 @@ Só o nome e o app id são obrigatórios. Para trocar alguma sugestão:
 | **Layout** | Sidebar retrátil, `PageHeader` padrão, telas de 404 e de erro |
 | **API** | `apiGet`, `apiPost`, `apiPut` e `apiDelete` com token `Bearer` e erros em português |
 | **Fallback de API** | Lista de endereços (`VITE_API_URL` separada por vírgula). Sem resposta em 10 s, ou GET com 5xx, passa para o próximo e fica nele até recarregar — mesma lógica do Portal |
+| **Erros** | Toast do Sonner no padrão do Portal, com botão "Copiar" (relatório para o suporte, sem tokens). Aparece sozinho em qualquer erro de `useQuery`/`useMutation`; mude o texto com `meta: { erro: "..." }` ou desligue com `meta: { erro: false }`. Fora do React Query: `toastErro(titulo, err)` de `src/lib/erro-toast.tsx` |
 | **Carregamento** | Shimmer no lugar de spinner: `TableSkeletonRows`, `CardsSkeleton` e `AppShellSkeleton` em `src/components/loading-skeletons.tsx` |
 | **Tabelas** | Exemplo com cabeçalho fixo, busca e exportação CSV no padrão do Excel brasileiro |
 | **Novidades** | Modal de release notes lido de `src/data/versions.json` |

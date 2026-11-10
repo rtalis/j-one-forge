@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Landmark, LogIn, AlertCircle, Loader2, ArrowLeft } from "lucide-react";
-import { toast } from "sonner";
+import { toastErro } from "@/lib/erro-toast";
 
 import loginBg from "@/assets/login-bg.jpeg";
 import { APP_CONFIG } from "@/app.config";
@@ -27,7 +27,7 @@ export function LoginScreen() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Não foi possível entrar";
       setError(msg);
-      toast.error(msg);
+      toastErro(msg, err);
     } finally {
       setLoading(false);
     }
