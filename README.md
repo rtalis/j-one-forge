@@ -64,6 +64,8 @@ Só o nome e o app id são obrigatórios. Para trocar alguma sugestão:
 | **Login** | Usuário e senha, SSO do Portal J-One (ticket e `postMessage`), botão "Voltar ao Portal" e tratamento de sessão expirada |
 | **Layout** | Sidebar retrátil, `PageHeader` padrão, telas de 404 e de erro |
 | **API** | `apiGet`, `apiPost`, `apiPut` e `apiDelete` com token `Bearer` e erros em português |
+| **Fallback de API** | Lista de endereços (`VITE_API_URL` separada por vírgula). Sem resposta em 10 s, ou GET com 5xx, passa para o próximo e fica nele até recarregar — mesma lógica do Portal |
+| **Carregamento** | Shimmer no lugar de spinner: `TableSkeletonRows`, `CardsSkeleton` e `AppShellSkeleton` em `src/components/loading-skeletons.tsx` |
 | **Tabelas** | Exemplo com cabeçalho fixo, busca e exportação CSV no padrão do Excel brasileiro |
 | **Novidades** | Modal de release notes lido de `src/data/versions.json` |
 | **Visual** | Tema verde e creme, mais de 40 componentes shadcn/ui, ícones J-One |
@@ -77,7 +79,7 @@ Só o nome e o app id são obrigatórios. Para trocar alguma sugestão:
 | Quero mudar | Arquivo |
 | :-- | :-- |
 | Nome, textos do login e ids | `src/app.config.ts` |
-| URL da API e subcaminho | `.env` |
+| Endereços da API (em ordem) e subcaminho | `.env` |
 | Itens do menu | `src/components/app-sidebar.tsx` |
 | Páginas | `src/routes/` (cada arquivo vira uma rota) |
 | Chamadas de API | `src/lib/` usando `api-client.ts` |

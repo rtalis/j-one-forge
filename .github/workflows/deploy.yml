@@ -1,0 +1,271 @@
+name: CI/CD - Build, Test & Deploy to SFTP
+
+# Modelo de CI/CD das ferramentas J-One (gerado pelo J-One Forge).
+# Ferramenta publicada como SPA estática em ${PUBLIC_ORIGIN}/${BASE_PATH}/.
+#
+# Para adaptar, mude só o bloco `env` abaixo (o `npm run create` já preenche).
+# Segredos necessários no repositório (Settings → Secrets → Actions):
+#   SFTP_HOST, SFTP_PORT, SFTP_USER, SFTP_PASSWORD e, opcional, SFTP_REMOTE_DIR
+#   (padrão /public_html/<BASE_PATH>; precisa terminar em /<BASE_PATH>).
+# Variável opcional (Settings → Variables): APP_URL, para o health-check.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  # Pasta servida no servidor (sem barras). É o VITE_BASEPATH do build.
+  BASE_PATH: ""
+  # Endereços da API embutidos no build (o .env não vai para o repositório),
+  # em ordem de preferência e separados por vírgula: se o primeiro cair, o app
+  # passa para o seguinte.
+  VITE_API_URL: https://api2.jacmov.com.br,https://apiruah.roxel.dev
+  # App id da ferramenta no Portal J-One.
+  VITE_APP_ID: "1"
+  # Domínio onde a ferramenta é publicada (para o health-check).
+  PUBLIC_ORIGIN: https://j-one.ia.br
+
+concurrency:
+  group: deploy-${{ github.repository }}-production
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # JOB 1: Build & testes de integridade
+  # ---------------------------------------------------------------------------
+  build:
+    name: 1. Build & Test in Cloud
+    # O próprio repositório do Forge é só o molde: não publica nada.
+    if: github.repository != 'rtalis/j-one-forge'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate configuration
+        run: |
+          set -e
+          if [ -z "$BASE_PATH" ] || [ "$BASE_PATH" = "/" ]; then
+            echo "❌ ERRO: defina BASE_PATH no bloco env do workflow (ex.: minha-ferramenta)."
+            echo "   Publicar na raiz com mirror --delete apagaria as outras ferramentas do servidor."
+            exit 1
+          fi
+          case "$BASE_PATH" in
+            /*|*/) echo "❌ ERRO: BASE_PATH deve vir sem barras no início/fim ($BASE_PATH)."; exit 1 ;;
+          esac
+          if ! printf '%s' "$VITE_APP_ID" | grep -qE '^[0-9]+$'; then
+            echo "❌ ERRO: VITE_APP_ID inválido ($VITE_APP_ID)."
+            exit 1
+          fi
+          echo "✔ BASE_PATH=/$BASE_PATH  VITE_APP_ID=$VITE_APP_ID  VITE_API_URL=$VITE_API_URL"
+
+      # Vite 8 exige Node >= 20.19.
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Bun
+        if: hashFiles('bun.lock') != ''
+        uses: oven-sh/setup-bun@v2
+
+      # Sempre instala pelas versões travadas no lockfile. Sem lockfile, versões
+      # novas do TanStack Start já quebraram o typecheck (ver finfisc).
+      - name: Install dependencies (lockfile)
+        run: |
+          set -e
+          if [ -f bun.lock ]; then
+            bun install --frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "❌ ERRO: nenhum lockfile (bun.lock ou package-lock.json) versionado."
+            exit 1
+          fi
+
+      - name: Typecheck validation (TypeScript)
+        run: npm run test
+
+      - name: Build static project
+        run: npm run build
+        env:
+          NODE_ENV: production
+          VITE_BASEPATH: /${{ env.BASE_PATH }}
+
+      - name: Automated Integrity & Prerender Tests
+        run: |
+          set -e
+          echo "🔍 Executando testes automatizados nos arquivos gerados..."
+
+          # 1. Pasta e página principal
+          if [ ! -f "dist/client/index.html" ]; then
+            echo "❌ ERRO: dist/client/index.html não foi gerado!"
+            exit 1
+          fi
+          if ! grep -q "<html" dist/client/index.html; then
+            echo "❌ ERRO: index.html não contém tag <html> válida!"
+            exit 1
+          fi
+
+          # 2. Páginas pré-renderizadas
+          PAGES=$(cd dist/client && find . -name index.html | sed 's#^\./##' | sort)
+          for page in $PAGES; do echo "✔ Página pré-renderizada: $page"; done
+
+          # 3. Os assets precisam apontar para /<BASE_PATH>/ (o caminho servido)
+          if ! grep -q "/${BASE_PATH}/assets/" dist/client/index.html; then
+            echo "❌ ERRO: index.html não referencia /${BASE_PATH}/assets/ — base do build errada!"
+            exit 1
+          fi
+
+          # 4. Bundles JS e CSS
+          JS_COUNT=$(find dist/client/assets -name "*.js" | wc -l)
+          CSS_COUNT=$(find dist/client/assets -name "*.css" | wc -l)
+          if [ "$JS_COUNT" -eq 0 ] || [ "$CSS_COUNT" -eq 0 ]; then
+            echo "❌ ERRO: bundles ausentes em dist/client/assets (JS=$JS_COUNT, CSS=$CSS_COUNT)!"
+            exit 1
+          fi
+
+          # 5. Endereço da API: o de produção embutido, nenhum endereço local
+          API_HOST=$(printf '%s' "$VITE_API_URL" | sed -E 's#^https?://##; s#[/,].*##')
+          if ! grep -rqF "$API_HOST" dist/client/assets; then
+            echo "❌ ERRO: endereço da API ($API_HOST) não encontrado no bundle!"
+            exit 1
+          fi
+          if grep -rqE "localhost:[0-9]+|127\.0\.0\.1" dist/client/assets; then
+            echo "❌ ERRO: o bundle contém um endereço local da API!"
+            exit 1
+          fi
+
+          echo "✔ Testes de integridade concluídos! ($JS_COUNT bundles JS, $CSS_COUNT bundles CSS)"
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-dist
+          path: dist/client
+          retention-days: 3
+
+  # ---------------------------------------------------------------------------
+  # JOB 2: Deploy via SFTP & health-check
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: 2. Deploy SFTP & Healthcheck
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: client-dist
+          path: dist/client
+
+      - name: Install LFTP
+        run: sudo apt-get update -y && sudo apt-get install -y lftp
+
+      - name: Synchronize to SFTP Server
+        timeout-minutes: 15
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          SFTP_PASSWORD: ${{ secrets.SFTP_PASSWORD }}
+          SFTP_REMOTE_DIR: ${{ secrets.SFTP_REMOTE_DIR }}
+        run: |
+          set -e
+          REMOTE_DIR="${SFTP_REMOTE_DIR:-/public_html/${BASE_PATH}}"
+          PORT="${SFTP_PORT:-2222}"
+
+          if [ -z "$SFTP_HOST" ] || [ -z "$SFTP_USER" ] || [ -z "$SFTP_PASSWORD" ]; then
+            echo "❌ ERRO: segredos SFTP_HOST / SFTP_USER / SFTP_PASSWORD não configurados."
+            exit 1
+          fi
+
+          # `mirror --delete` apaga no destino o que não existe no build. Com a
+          # pasta errada (ex.: /public_html) isso apagaria o site inteiro, então
+          # só aceita uma pasta que termine em /<BASE_PATH>.
+          case "${REMOTE_DIR%/}" in
+            */"${BASE_PATH}") ;;
+            *)
+              echo "❌ ERRO: SFTP_REMOTE_DIR ($REMOTE_DIR) precisa terminar em /${BASE_PATH}."
+              exit 1
+              ;;
+          esac
+
+          # Segredo colado com espaço/quebra de linha no fim faz o lftp tentar
+          # um host inexistente para sempre.
+          SFTP_HOST="$(printf '%s' "$SFTP_HOST" | tr -d '[:space:]')"
+          PORT="$(printf '%s' "$PORT" | tr -d '[:space:]')"
+
+          # Falha rápido se a porta nem abre (host/porta errados ou firewall),
+          # em vez de deixar o lftp tentando de novo em silêncio.
+          echo "🔌 Testando conexão TCP com $SFTP_HOST:$PORT ..."
+          if ! timeout 15 bash -c "exec 3<>/dev/tcp/$SFTP_HOST/$PORT"; then
+            echo "❌ ERRO: não foi possível abrir $SFTP_HOST:$PORT (confira SFTP_HOST/SFTP_PORT)."
+            exit 1
+          fi
+
+          echo "☁️ Sincronizando com o servidor SFTP ($SFTP_HOST:$PORT -> $REMOTE_DIR)..."
+
+          # Por padrão o lftp repete conexão/login falho quase sem limite e sem
+          # mostrar erro (um deploy ficou 45 min parado). Com estes limites, um
+          # login errado ou rede travada falha em ~1 min com a mensagem do servidor.
+          lftp -p "$PORT" -u "$SFTP_USER","$SFTP_PASSWORD" sftp://"$SFTP_HOST" <<EOF
+          set sftp:auto-confirm yes
+          set net:timeout 20
+          set net:max-retries 2
+          set net:reconnect-interval-base 5
+          set net:reconnect-interval-max 10
+          set cmd:fail-exit yes
+          mkdir -p -f $REMOTE_DIR
+          mirror --reverse --delete --verbose ./dist/client $REMOTE_DIR
+          bye
+          EOF
+
+          echo "✔ Sincronização SFTP concluída com sucesso!"
+
+      - name: Post-Deploy Live Healthcheck
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          set -e
+          URL="${APP_URL:-${PUBLIC_ORIGIN}/${BASE_PATH}/}"
+          URL="${URL%/}/"
+          ORIGIN=$(echo "$URL" | grep -oE '^https?://[^/]+')
+          echo "🌐 Health-check em $URL ..."
+
+          STATUS=$(curl -s -o page.html -w "%{http_code}" -L "$URL" || echo "000")
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ $URL -> HTTP $STATUS"
+            exit 1
+          fi
+          echo "✔ $URL -> HTTP $STATUS"
+
+          # O index.html publicado deve ser o deste build e o seu bundle deve carregar.
+          ASSET=$(grep -oE "/${BASE_PATH}/assets/[^\"]+\.js" page.html | head -1)
+          if [ -z "$ASSET" ] || ! cmp -s page.html dist/client/index.html; then
+            echo "⚠️ O index.html publicado difere do build (cache do servidor/CDN?)."
+          fi
+          if [ -n "$ASSET" ]; then
+            ASTATUS=$(curl -s -o /dev/null -w "%{http_code}" "${ORIGIN}${ASSET}" || echo "000")
+            if [ "$ASTATUS" != "200" ]; then
+              echo "❌ Bundle ${ASSET} -> HTTP $ASTATUS"
+              exit 1
+            fi
+            echo "✔ Bundle ${ASSET} -> HTTP $ASTATUS"
+          fi
+
+          # Demais páginas pré-renderizadas (aviso, não bloqueia).
+          for page in $(cd dist/client && find . -mindepth 2 -name index.html | sed 's#^\./##; s#index\.html$##'); do
+            PSTATUS=$(curl -s -o /dev/null -w "%{http_code}" -L "${URL}${page}" || echo "000")
+            if [ "$PSTATUS" = "200" ]; then
+              echo "✔ ${URL}${page} -> HTTP $PSTATUS"
+            else
+              echo "⚠️ ${URL}${page} -> HTTP $PSTATUS"
+            fi
+          done
+
+          echo "🚀 Deploy finalizado com sucesso e ferramenta operacional!"

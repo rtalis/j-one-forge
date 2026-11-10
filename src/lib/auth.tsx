@@ -249,7 +249,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Ignore errors that we know are 401s or common noise
       if (
-        (message.includes("Falha") || message.includes("Failed to fetch") || message.includes("NetworkError")) &&
+        (error?.name === "ApiIndisponivelError" ||
+          message.includes("Falha") || message.includes("Failed to fetch") || message.includes("NetworkError")) &&
         !message.includes("401") &&
         !message.includes("Unauthorized") &&
         !message.includes("$TSR/Error")

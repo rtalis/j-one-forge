@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Download, RefreshCw, Search } from "lucide-react";
 import { APP_CONFIG } from "@/app.config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
+import { TableSkeletonRows } from "@/components/loading-skeletons";
 import { downloadCsv, formatNumberBr } from "@/utils/export-csv";
 
 export const Route = createFileRoute("/exemplo-tabela")({
@@ -12,19 +14,26 @@ export const Route = createFileRoute("/exemplo-tabela")({
   component: ExemploTabelaPage,
 });
 
-// Mock data — replace with a useQuery(...) calling apiGet(path, token) from @/lib/api-client.
-const DATA = Array.from({ length: 30 }, (_, i) => ({
-  id: i + 1,
-  descricao: `Item de exemplo ${i + 1}`,
-  categoria: ["Alpha", "Beta", "Gamma"][i % 3]!,
-  valor: (i + 1) * 1234.56,
-}));
+type Item = { id: number; descricao: string; categoria: string; valor: number };
+
+// Mock — troque por: const { token } = useAuth(); apiGet<Item[]>("/api/v1/...", token!)
+async function fetchItens(): Promise<Item[]> {
+  await new Promise((r) => setTimeout(r, 1200)); // simula a latência da API
+  return Array.from({ length: 30 }, (_, i) => ({
+    id: i + 1,
+    descricao: `Item de exemplo ${i + 1}`,
+    categoria: ["Alpha", "Beta", "Gamma"][i % 3]!,
+    valor: (i + 1) * 1234.56,
+  }));
+}
 
 function ExemploTabelaPage() {
   const [q, setQ] = useState("");
+  const query = useQuery({ queryKey: ["exemplo-itens"], queryFn: fetchItens });
   const rows = useMemo(
-    () => DATA.filter((r) => r.descricao.toLowerCase().includes(q.trim().toLowerCase())),
-    [q],
+    () =>
+      (query.data ?? []).filter((r) => r.descricao.toLowerCase().includes(q.trim().toLowerCase())),
+    [query.data, q],
   );
 
   return (
@@ -34,14 +43,21 @@ function ExemploTabelaPage() {
         subtitle="Estilo padrão de tabela, busca e exportação CSV"
         actions={
           <>
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs cursor-pointer">
-              <RefreshCw className="h-3.5 w-3.5" />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs cursor-pointer"
+              disabled={query.isFetching}
+              onClick={() => query.refetch()}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${query.isFetching ? "animate-spin" : ""}`} />
               Atualizar
             </Button>
             <Button
               variant="outline"
               size="sm"
               className="h-8 gap-1.5 text-xs cursor-pointer"
+              disabled={rows.length === 0}
               onClick={() =>
                 downloadCsv(
                   ["ID", "Descrição", "Categoria", "Valor"],
@@ -83,6 +99,8 @@ function ExemploTabelaPage() {
               </tr>
             </thead>
             <tbody>
+              {/* Primeira carga: linhas em shimmer. Recarregar mantém os dados na tela. */}
+              {query.isLoading && <TableSkeletonRows columns={4} rows={12} alignRight={[3]} />}
               {rows.map((r) => (
                 <tr key={r.id} className="transition-colors hover:bg-muted/50">
                   <td className="border-b px-3 py-2 font-mono text-muted-foreground">{r.id}</td>
@@ -93,10 +111,10 @@ function ExemploTabelaPage() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && (
+              {!query.isLoading && rows.length === 0 && (
                 <tr>
                   <td colSpan={4} className="py-10 text-center text-muted-foreground">
-                    Nenhum resultado.
+                    {query.isError ? "Não foi possível carregar os dados." : "Nenhum resultado."}
                   </td>
                 </tr>
               )}

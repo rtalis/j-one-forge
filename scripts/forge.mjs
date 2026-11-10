@@ -158,7 +158,8 @@ ${c.green("✔")} ${c.bold(name)} created at ${target}
   npm run dev
 
 ${c.dim("Next: menu in src/components/app-sidebar.tsx, pages in src/routes/.")}
-`);
+${c.dim("Deploy: set the SFTP_* secrets on the GitHub repo and push to main (see README).")}
+${base ? "" : c.red("Warning: root sub-path — the deploy workflow refuses to publish until BASE_PATH is set.\n")}`);
 }
 
 function scaffold({ name, appId, slug, base, target }) {
@@ -193,6 +194,13 @@ function scaffold({ name, appId, slug, base, target }) {
   );
   cpSync(join(target, ".env.example"), join(target, ".env"));
 
+  // CI/CD model: the deploy workflow reads the sub-path and app id from its env block.
+  edit(".github/workflows/deploy.yml", (s) =>
+    s
+      .replace(/^(  BASE_PATH: ).*$/m, `$1${JSON.stringify(base.replace(/^\//, ""))}`)
+      .replace(/^(  VITE_APP_ID: ).*$/m, `$1"${appId}"`),
+  );
+
   writeFileSync(
     join(target, "README.md"),
     `# ${name}
@@ -211,6 +219,23 @@ npm run build   # gera dist/client
 \`\`\`
 
 Marca e ids ficam em \`src/app.config.ts\`; URL da API e subcaminho, no \`.env\`.
+
+## Deploy
+
+Cada push na \`main\` roda \`.github/workflows/deploy.yml\`: typecheck, build, testes de
+integridade, envio por SFTP para \`/public_html${base}\` e health-check.
+O subcaminho, o app id e a URL da API de produção ficam no bloco \`env\` do workflow.
+
+Configure uma vez os segredos do repositório (com as variáveis já exportadas no shell):
+
+\`\`\`bash
+printf %s "$SFTP_HOST"     | gh secret set SFTP_HOST
+printf %s "$SFTP_PORT"     | gh secret set SFTP_PORT
+printf %s "$SFTP_USER"     | gh secret set SFTP_USER
+printf %s "$SFTP_PASS"     | gh secret set SFTP_PASSWORD
+\`\`\`
+
+Versione o lockfile (\`package-lock.json\` ou \`bun.lock\`): o CI instala só por ele.
 `,
   );
 

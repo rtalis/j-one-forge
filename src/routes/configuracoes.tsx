@@ -3,7 +3,7 @@ import { APP_CONFIG } from "@/app.config";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { useAuth } from "@/lib/auth";
-import { API_BASE, APP_ID } from "@/lib/api-client";
+import { API_URLS, APP_ID, apiBaseAtual } from "@/lib/api-client";
 
 export const Route = createFileRoute("/configuracoes")({
   head: () => ({ meta: [{ title: `Configurações | ${APP_CONFIG.name}` }] }),
@@ -15,7 +15,8 @@ function ConfiguracoesPage() {
   const rows: [string, string][] = [
     ["Usuário", username ?? "—"],
     ["Origem do acesso", isFromPortal ? "Portal J-One" : "Login direto"],
-    ["API", String(API_BASE)],
+    ["API em uso", apiBaseAtual()],
+    ["Endereços da API", API_URLS.join(", ")],
     ["App ID", String(APP_ID)],
   ];
   return (

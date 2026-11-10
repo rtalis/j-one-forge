@@ -1,19 +1,119 @@
 import { notifyUnauthorized } from "./auth";
 import { APP_CONFIG } from "@/app.config";
 
-export const API_BASE =
-  (typeof import.meta !== "undefined" && import.meta.env?.["VITE_API_URL"]) ||
-  (typeof process !== "undefined" && process.env?.["VITE_API_URL"]) ||
-  APP_CONFIG.defaultApiUrl;
+function readEnv(...keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v =
+      (typeof import.meta !== "undefined" && import.meta.env?.[k]) ||
+      (typeof process !== "undefined" && process.env?.[k]);
+    if (v) return String(v);
+  }
+  return undefined;
+}
+
+// Endereços da API, em ordem de preferência (mesma lógica do Portal J-One).
+// A ferramenta passa para o seguinte quando o atual está "fora do ar" e fica
+// nele até recarregar a página:
+// - sem resposta: falha de rede/DNS/TLS/CORS, ou nada em TEMPO_LIMITE_MS;
+// - GET com qualquer 5xx. Só GET, que pode repetir sem efeito colateral;
+//   POST/PUT/PATCH/DELETE com 5xx voltam como erro normal, porque o primeiro
+//   servidor pode já ter gravado algo.
+// Todos servem a MESMA API (mesmo banco e mesmo segredo JWT), então os tokens
+// valem em qualquer um. VITE_API_URL substitui a lista (aceita vários,
+// separados por vírgula); sem ela, vale APP_CONFIG.apiUrls.
+export const API_URLS: string[] = (() => {
+  const lista = (readEnv("VITE_API_URL") ?? "")
+    .split(",")
+    .map((u) => u.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+  return lista.length > 0 ? lista : [...APP_CONFIG.apiUrls];
+})();
+
+let indiceApi = 0;
+
+/** Endereço da API em uso agora (muda se o principal cair). */
+export function apiBaseAtual(): string {
+  return API_URLS[indiceApi]!;
+}
+
+/** Endereço principal da API (o primeiro da lista). */
+export const API_BASE = API_URLS[0]!;
 
 export const APP_ID = Number(
-  (typeof import.meta !== "undefined" &&
-    (import.meta.env?.["VITE_APP_ID"] || import.meta.env?.["VITE_APPID"] || import.meta.env?.["APPID"])) ||
-  (typeof process !== "undefined" &&
-    (process.env?.["VITE_APP_ID"] || process.env?.["VITE_APPID"] || process.env?.["APPID"])) ||
-  APP_CONFIG.defaultAppId
+  readEnv("VITE_APP_ID", "VITE_APPID", "APPID") || APP_CONFIG.defaultAppId,
 );
 
+/** Tempo máximo para cada endereço começar a responder. */
+const TEMPO_LIMITE_MS = 10_000;
+/** Qualquer 5xx: erro do servidor (ou do proxy na frente dele). */
+const hostComFalha = (status: number) => status >= 500;
+
+/** Sem resposta de nenhum endereço da API (rede/DNS/CORS ou tempo esgotado). */
+export class ApiIndisponivelError extends TypeError {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApiIndisponivelError";
+  }
+}
+
+async function fetchComTempoLimite(url: string, init: RequestInit): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TEMPO_LIMITE_MS);
+  // Respeita o signal de quem chamou (ex.: cancelamento do React Query).
+  const externo = init.signal;
+  const repassar = () => ctrl.abort();
+  if (externo) {
+    if (externo.aborted) ctrl.abort();
+    else externo.addEventListener("abort", repassar, { once: true });
+  }
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } catch (err) {
+    if (externo?.aborted) throw err;
+    if (ctrl.signal.aborted) {
+      throw new ApiIndisponivelError(`Sem resposta em ${TEMPO_LIMITE_MS / 1000} s: ${url}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    externo?.removeEventListener("abort", repassar);
+  }
+}
+
+/** fetch na API, com troca para o próximo endereço se o atual estiver fora do ar. */
+async function fetchComFallback(caminho: string, init: RequestInit): Promise<Response> {
+  const repetivel = (init.method ?? "GET").toUpperCase() === "GET";
+  let ultimaResposta: Response | null = null;
+  for (let tentativa = 0; tentativa < API_URLS.length; tentativa++) {
+    const i = (indiceApi + tentativa) % API_URLS.length;
+    let resp: Response;
+    try {
+      resp = await fetchComTempoLimite(`${API_URLS[i]}${caminho}`, init);
+    } catch (err) {
+      // Cancelado por quem chamou: não é queda do servidor.
+      if (init.signal?.aborted) throw err;
+      // Sem resposta (rede, DNS, CORS, tempo esgotado). Erro HTTP não chega aqui.
+      console.warn(`[api] ${API_URLS[i]} não respondeu:`, err);
+      continue;
+    }
+    if (repetivel && hostComFalha(resp.status) && tentativa < API_URLS.length - 1) {
+      console.warn(`[api] ${API_URLS[i]} respondeu ${resp.status}; tentando o próximo endereço.`);
+      ultimaResposta = resp;
+      continue;
+    }
+    if (i !== indiceApi && !hostComFalha(resp.status)) {
+      console.warn(`[api] API principal indisponível; usando ${API_URLS[i]}`);
+      indiceApi = i;
+    }
+    return resp;
+  }
+  // Todos fora: devolve o último 5xx (vira erro HTTP normal) ou o erro de rede.
+  if (ultimaResposta) return ultimaResposta;
+  // O detalhe de cada endereço já foi para o console acima.
+  throw new ApiIndisponivelError(
+    "Não foi possível conectar à API. Verifique sua conexão e tente novamente.",
+  );
+}
 
 export class ApiError extends Error {
   status: number;
@@ -25,9 +125,10 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch(path: string, options: RequestInit = {}) {
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
-  
-  const response = await fetch(url, options);
+  // URL absoluta: chamada direta, sem fallback.
+  const response = path.startsWith("http")
+    ? await fetchComTempoLimite(path, options)
+    : await fetchComFallback(path, options);
   
   const isAuthRoute =
     path.includes("/api/v1/auth/login") ||

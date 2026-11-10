@@ -18,7 +18,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { LoginScreen } from "@/components/login-screen";
 import { Toaster } from "@/components/ui/sonner";
 import { ReleaseNotesModal } from "@/components/release-notes-modal";
-import { Loader2 } from "lucide-react";
+import { AppShellSkeleton } from "@/components/loading-skeletons";
 import { APP_CONFIG } from "@/app.config";
 import { getBasepath } from "../lib/basepath";
 
@@ -142,14 +142,9 @@ function AppShell() {
 
   if (!ready || isAuthenticatingPortal) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background gap-3">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        {isAuthenticatingPortal && (
-          <p className="text-sm text-muted-foreground animate-pulse">
-            Autenticando via Portal J-One...
-          </p>
-        )}
-      </div>
+      <AppShellSkeleton
+        message={isAuthenticatingPortal ? "Autenticando via Portal J-One..." : undefined}
+      />
     );
   }
 
