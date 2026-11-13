@@ -13,11 +13,14 @@ export function TableSkeletonRows({
   columns,
   rows = 8,
   alignRight = [],
+  centered = false,
 }: {
   columns: number;
   rows?: number;
   /** Índices das colunas numéricas (alinhadas à direita). */
   alignRight?: number[];
+  /** Centraliza as barras (tabelas com texto centralizado). */
+  centered?: boolean;
 }) {
   // Larguras variadas para parecer conteúdo real, sempre as mesmas por célula.
   const widths = ["w-10", "w-3/4", "w-1/2", "w-2/3", "w-1/3", "w-5/6"];
@@ -32,6 +35,7 @@ export function TableSkeletonRows({
                   "h-3",
                   widths[(r + c * 3) % widths.length],
                   alignRight.includes(c) && "ml-auto",
+                  centered && "mx-auto",
                 )}
               />
             </td>
@@ -61,7 +65,7 @@ export function CardsSkeleton({ count = 4, className }: { count?: number; classN
 export function AppShellSkeleton({ message }: { message?: string | undefined }) {
   return (
     <div className="flex min-h-screen bg-background" role="status" aria-live="polite">
-      <aside className="hidden w-64 shrink-0 flex-col gap-4 border-r bg-sidebar p-4 md:flex">
+      <aside className="hidden w-64 shrink-0 flex-col gap-4 bg-sidebar p-4 md:flex">
         <div className="flex items-center gap-3">
           <Skeleton className="h-9 w-9 rounded-lg" />
           <div className="flex-1 space-y-2">
@@ -76,9 +80,12 @@ export function AppShellSkeleton({ message }: { message?: string | undefined }) 
         </div>
       </aside>
       <div className="flex flex-1 flex-col">
-        <div className="flex h-14 items-center gap-3 border-b px-6">
-          <Skeleton className="h-4 w-48" />
-          <Skeleton className="ml-auto h-8 w-24" />
+        {/* Faixa verde do topo (BarraSuperior), com o título da tela numa linha só. */}
+        <div className="flex h-14 items-center gap-2 bg-sidebar px-6">
+          <div className="h-4 w-40 rounded bg-sidebar-accent/60" />
+          <div className="ml-auto h-9 w-9 rounded-md bg-sidebar-accent/40" />
+          <div className="h-9 w-9 rounded-md bg-sidebar-accent/40" />
+          <div className="h-9 w-28 rounded-full bg-sidebar-accent/40" />
         </div>
         <div className="flex-1 space-y-4 px-6 py-4">
           {message && <p className="text-sm text-muted-foreground">{message}</p>}

@@ -18,10 +18,10 @@ on:
 env:
   # Pasta servida no servidor (sem barras). É o VITE_BASEPATH do build.
   BASE_PATH: ""
-  # Endereços da API embutidos no build (o .env não vai para o repositório),
-  # em ordem de preferência e separados por vírgula: se o primeiro cair, o app
-  # passa para o seguinte.
-  VITE_API_URL: https://api2.jacmov.com.br,https://apiruah.roxel.dev
+  # Endereços da API embutidos no build (o .env não vai para o repositório).
+  # Principal e reserva(s): se o principal cair, o app passa para o reserva.
+  VITE_API_URL: https://api2.jacmov.com.br
+  VITE_API_BACKUP_URL: https://apiruah.roxel.dev
   # App id da ferramenta no Portal J-One.
   VITE_APP_ID: "1"
   # Domínio onde a ferramenta é publicada (para o health-check).
@@ -60,7 +60,7 @@ jobs:
             echo "❌ ERRO: VITE_APP_ID inválido ($VITE_APP_ID)."
             exit 1
           fi
-          echo "✔ BASE_PATH=/$BASE_PATH  VITE_APP_ID=$VITE_APP_ID  VITE_API_URL=$VITE_API_URL"
+          echo "✔ BASE_PATH=/$BASE_PATH  VITE_APP_ID=$VITE_APP_ID  VITE_API_URL=$VITE_API_URL  VITE_API_BACKUP_URL=$VITE_API_BACKUP_URL"
 
       # Vite 8 exige Node >= 20.19.
       - name: Setup Node.js 22

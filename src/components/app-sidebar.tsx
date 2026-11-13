@@ -5,7 +5,6 @@ import {
   ChevronRight,
   LayoutDashboard,
   Landmark,
-  LogOut,
   Settings,
   Table2,
   type LucideIcon,
@@ -44,7 +43,7 @@ export function AppSidebar() {
   const isActive = (path: string) => currentPath === path;
   const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
-  const { username, signOut, isFromPortal, voltarAoPortal } = useAuth();
+  const { isFromPortal, voltarAoPortal } = useAuth();
 
   const renderItems = (items: NavItem[]) =>
     items.map((item) => (
@@ -59,24 +58,30 @@ export function AppSidebar() {
     ));
 
   return (
-    <Sidebar collapsible="icon" className="z-50 border-r border-sidebar-border shadow-2xl">
-      <SidebarHeader className="border-b border-sidebar-border">
-        {isFromPortal && (
-          <div className="pt-1 pb-1">
+    <Sidebar collapsible="icon" className="z-50 group-data-[side=left]:border-r-0">
+      <SidebarHeader className="gap-0 p-0">
+        {/* Linha 1: mesma altura da faixa verde do topo (h-14). */}
+        <div
+          className={`flex h-14 shrink-0 items-center ${collapsed ? "justify-center px-0" : "px-2"}`}
+        >
+          {isFromPortal && (
             <button
               type="button"
               onClick={voltarAoPortal}
               title="Voltar ao Portal"
-              className={`flex w-full items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/50 text-sidebar-foreground transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground font-medium cursor-pointer shadow-xs ${
-                collapsed ? "h-8 w-8 p-0 justify-center mx-auto" : "h-7 px-2.5 justify-start text-xs"
+              className={`flex cursor-pointer items-center justify-center gap-2.5 rounded-lg bg-transparent text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
+                collapsed ? "h-10 w-10 p-0" : "h-10 w-full px-4"
               }`}
             >
-              <ArrowLeft className="h-3.5 w-3.5 shrink-0 text-sidebar-primary" />
+              <ArrowLeft className="h-4 w-4 shrink-0" />
               {!collapsed && <span>Voltar ao Portal</span>}
             </button>
-          </div>
-        )}
-        <div className={`flex items-center gap-3 py-2 ${collapsed ? "px-0 justify-center" : "px-1"}`}>
+          )}
+        </div>
+        {/* Linha 2: logo e nome da ferramenta. */}
+        <div
+          className={`flex h-[72px] shrink-0 items-center gap-3 ${collapsed ? "justify-center px-0" : "px-3"}`}
+        >
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
             <Landmark className="h-5 w-5" />
           </div>
@@ -108,20 +113,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border">
-        {!collapsed && username && (
-          <div className="flex items-center justify-between gap-2 px-2 py-1">
-            <span className="truncate text-xs text-sidebar-foreground/70">{username}</span>
-            <button
-              type="button"
-              onClick={signOut}
-              aria-label="Sair"
-              className="flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
-        <div className={`flex items-center px-1 ${collapsed ? "justify-center" : "justify-end"}`}>
+        <div className="flex items-center justify-center px-1">
           <button
             type="button"
             onClick={toggleSidebar}

@@ -14,6 +14,8 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { BarraSuperior } from "@/components/barra-superior";
+import { TopoProvider } from "@/components/topo-provider";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { LoginScreen } from "@/components/login-screen";
 import { Toaster } from "@/components/ui/sonner";
@@ -50,16 +52,18 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
 
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
-    
+
     // Safety net for 401s that crash the entire route tree
     const message = error instanceof Error ? error.message : String(error);
-    const is401 = 
-      message.includes("401") || 
+    const is401 =
+      message.includes("401") ||
       message.includes("Unauthorized") ||
-      (typeof error === "object" && error !== null && (error as { status?: number }).status === 401);
+      (typeof error === "object" &&
+        error !== null &&
+        (error as { status?: number }).status === 401);
 
-    if (is401 && document.documentElement.dataset['authRedirecting'] !== "true") {
-      document.documentElement.dataset['authRedirecting'] = "true";
+    if (is401 && document.documentElement.dataset["authRedirecting"] !== "true") {
+      document.documentElement.dataset["authRedirecting"] = "true";
       localStorage.removeItem(APP_CONFIG.storageKey); // Direct removal since we might be outside AuthProvider context
       window.location.replace(getBasepath() ?? "/");
     }
@@ -156,10 +160,13 @@ function AppShell() {
     <SidebarProvider className="h-svh min-h-svh max-h-svh overflow-hidden">
       <div className="relative flex h-full w-full overflow-hidden">
         <AppSidebar />
-        <main className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-auto">
-          {/* Required: nested routes render here. */}
-          <Outlet />
-        </main>
+        <TopoProvider>
+          <main className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-auto">
+            <BarraSuperior />
+            {/* Required: nested routes render here. */}
+            <Outlet />
+          </main>
+        </TopoProvider>
       </div>
       <ReleaseNotesModal />
     </SidebarProvider>

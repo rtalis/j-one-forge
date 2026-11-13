@@ -1,5 +1,6 @@
 import { notifyUnauthorized } from "./auth";
 import { APP_CONFIG } from "@/app.config";
+import { avisarFailover } from "@/lib/aviso-failover";
 
 function readEnv(...keys: string[]): string | undefined {
   for (const k of keys) {
@@ -19,14 +20,22 @@ function readEnv(...keys: string[]): string | undefined {
 //   POST/PUT/PATCH/DELETE com 5xx voltam como erro normal, porque o primeiro
 //   servidor pode já ter gravado algo.
 // Todos servem a MESMA API (mesmo banco e mesmo segredo JWT), então os tokens
-// valem em qualquer um. VITE_API_URL substitui a lista (aceita vários,
-// separados por vírgula); sem ela, vale APP_CONFIG.apiUrls.
-export const API_URLS: string[] = (() => {
-  const lista = (readEnv("VITE_API_URL") ?? "")
+// valem em qualquer um.
+//
+// Endereços vêm do .env:
+//   VITE_API_URL         -> principal
+//   VITE_API_BACKUP_URL  -> reserva (aceita vários, separados por vírgula)
+// Com o .env preenchido, só esses endereços são usados. Sem nenhum dos dois,
+// vale APP_CONFIG.apiUrls. Endereço repetido entra uma vez só.
+const listaDoEnv = (chave: string) =>
+  (readEnv(chave) ?? "")
     .split(",")
     .map((u) => u.trim().replace(/\/+$/, ""))
     .filter(Boolean);
-  return lista.length > 0 ? lista : [...APP_CONFIG.apiUrls];
+
+export const API_URLS: string[] = (() => {
+  const doEnv = [...listaDoEnv("VITE_API_URL"), ...listaDoEnv("VITE_API_BACKUP_URL")];
+  return [...new Set(doEnv.length > 0 ? doEnv : APP_CONFIG.apiUrls)];
 })();
 
 let indiceApi = 0;
@@ -80,34 +89,69 @@ async function fetchComTempoLimite(url: string, init: RequestInit): Promise<Resp
   }
 }
 
-/** fetch na API, com troca para o próximo endereço se o atual estiver fora do ar. */
+/** Motivo curto da falha de um endereço, para o aviso de failover. */
+function motivoDaFalha(err: unknown): string {
+  if (err instanceof ApiIndisponivelError) return `sem resposta em ${TEMPO_LIMITE_MS / 1000} s`;
+  return "sem resposta";
+}
+
+/** fetch na API, com troca para o próximo endereço se o atual estiver fora do ar.
+ * Cada troca aparece no aviso de failover (canto inferior direito). */
 async function fetchComFallback(caminho: string, init: RequestInit): Promise<Response> {
   const repetivel = (init.method ?? "GET").toUpperCase() === "GET";
   let ultimaResposta: Response | null = null;
+  // Endereço que falhou por último e o motivo (para o aviso).
+  let falhou: { url: string; motivo: string } | null = null;
+  const encerrarAviso = () => {
+    if (falhou)
+      avisarFailover({ fase: "falhou", de: falhou.url, para: falhou.url, motivo: falhou.motivo });
+  };
   for (let tentativa = 0; tentativa < API_URLS.length; tentativa++) {
     const i = (indiceApi + tentativa) % API_URLS.length;
+    if (falhou)
+      avisarFailover({
+        fase: "tentando",
+        de: falhou.url,
+        para: API_URLS[i]!,
+        motivo: falhou.motivo,
+      });
     let resp: Response;
     try {
       resp = await fetchComTempoLimite(`${API_URLS[i]}${caminho}`, init);
     } catch (err) {
       // Cancelado por quem chamou: não é queda do servidor.
-      if (init.signal?.aborted) throw err;
+      if (init.signal?.aborted) {
+        encerrarAviso();
+        throw err;
+      }
       // Sem resposta (rede, DNS, CORS, tempo esgotado). Erro HTTP não chega aqui.
       console.warn(`[api] ${API_URLS[i]} não respondeu:`, err);
+      falhou = { url: API_URLS[i]!, motivo: motivoDaFalha(err) };
       continue;
     }
     if (repetivel && hostComFalha(resp.status) && tentativa < API_URLS.length - 1) {
       console.warn(`[api] ${API_URLS[i]} respondeu ${resp.status}; tentando o próximo endereço.`);
       ultimaResposta = resp;
+      falhou = { url: API_URLS[i]!, motivo: `HTTP ${resp.status}` };
       continue;
     }
     if (i !== indiceApi && !hostComFalha(resp.status)) {
       console.warn(`[api] API principal indisponível; usando ${API_URLS[i]}`);
       indiceApi = i;
+      if (falhou)
+        avisarFailover({
+          fase: "usando",
+          de: falhou.url,
+          para: API_URLS[i]!,
+          motivo: falhou.motivo,
+        });
+    } else {
+      encerrarAviso();
     }
     return resp;
   }
   // Todos fora: devolve o último 5xx (vira erro HTTP normal) ou o erro de rede.
+  encerrarAviso();
   if (ultimaResposta) return ultimaResposta;
   // O detalhe de cada endereço já foi para o console acima.
   throw new ApiIndisponivelError(
@@ -132,7 +176,7 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   const response = path.startsWith("http")
     ? await fetchComTempoLimite(path, options)
     : await fetchComFallback(path, options);
-  
+
   const isAuthRoute =
     path.includes("/api/v1/auth/login") ||
     path.includes("/api/v1/auth/sso") ||
@@ -141,7 +185,7 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   if (response.status === 401 && !isAuthRoute) {
     notifyUnauthorized();
   }
-  
+
   return response;
 }
 
@@ -172,7 +216,10 @@ async function erroDaResposta(response: Response): Promise<ApiError> {
 
   if (response.status === 401) {
     if (!message || /^(bad credentials|unauthorized|status 401)$/i.test(message.trim())) {
-      return new ApiError("Usuário ou senha incorretos. Por favor, verifique suas credenciais.", 401);
+      return new ApiError(
+        "Usuário ou senha incorretos. Por favor, verifique suas credenciais.",
+        401,
+      );
     }
     return new ApiError(message, 401);
   }
@@ -181,10 +228,13 @@ async function erroDaResposta(response: Response): Promise<ApiError> {
     if (message.includes("Invalid CORS request") || text.includes("Invalid CORS request")) {
       return new ApiError(
         "Erro de CORS/Permissão (403): O backend rejeitou a requisição desta origem. Verifique as origens permitidas (allowedOrigins) no Spring Boot.",
-        403
+        403,
       );
     }
-    return new ApiError(message || "Acesso negado: você não possui permissão para acessar este recurso (403).", 403);
+    return new ApiError(
+      message || "Acesso negado: você não possui permissão para acessar este recurso (403).",
+      403,
+    );
   }
 
   if (response.status === 404) {
@@ -192,7 +242,10 @@ async function erroDaResposta(response: Response): Promise<ApiError> {
   }
 
   if (response.status >= 500) {
-    return new ApiError(message || `Erro interno no servidor (${response.status}). Tente novamente mais tarde.`, response.status);
+    return new ApiError(
+      message || `Erro interno no servidor (${response.status}). Tente novamente mais tarde.`,
+      response.status,
+    );
   }
 
   return new ApiError(message || `Erro na requisição (${response.status})`, response.status);
@@ -205,11 +258,11 @@ export async function apiGet<T>(path: string, token: string): Promise<T> {
       "Content-Type": "application/json",
     },
   });
-  
+
   if (!response.ok) {
     throw await parseApiError(response);
   }
-  
+
   return response.json();
 }
 
@@ -217,21 +270,21 @@ export async function apiPost<T = void>(path: string, body: any, token?: string)
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  
+
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  
+
   const response = await apiFetch(path, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
   });
-  
+
   if (!response.ok) {
     throw await parseApiError(response);
   }
-  
+
   const text = await response.text();
   return text ? JSON.parse(text) : (undefined as T);
 }

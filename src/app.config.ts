@@ -4,7 +4,8 @@
  * (sidebar, login, document title, storage keys) reads from here.
  *
  * Runtime overrides come from .env (see .env.example):
- *   VITE_API_URL   -> backend base URL(s), comma-separated, in order of preference
+ *   VITE_API_URL         -> main backend URL
+ *   VITE_API_BACKUP_URL  -> backup backend URL(s), comma-separated, tried in order if the main is down
  *   VITE_APP_ID    -> app id registered on the portal / API
  *   VITE_BASEPATH  -> sub-path where the app is served (e.g. /meu-app). Empty = root.
  */
@@ -22,8 +23,8 @@ export const APP_CONFIG = {
   storageKey: "ruah_j_one_forge_token",
   /** App id used by the portal J-One / API token exchange (fallback when VITE_APP_ID is unset). */
   defaultAppId: 1,
-  /** API addresses (same API, same JWT secret), in order of preference, used
-   * when VITE_API_URL is unset. If one is down, requests fail over to the next. */
+  /** API addresses (main first, then backups) used ONLY when neither
+   * VITE_API_URL nor VITE_API_BACKUP_URL is set. If one is down, requests fail over to the next. */
   apiUrls: ["https://api2.jacmov.com.br", "https://apiruah.roxel.dev"],
   /** Where "Voltar ao Portal" goes when NOT inside the portal iframe. */
   portalUrl: "https://j-one.ia.br",
